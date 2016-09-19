@@ -18,6 +18,8 @@
 // var netdataShowHelp = false;         // enable/disable help (default enabled)
 // var netdataShowAlarms = true;        // enable/disable alarms checks and notifications (default disabled)
 //
+// var netdataRegistryAfterMs = 1500    // the time to consult to registry on startup
+//
 // You can also set the default netdata server, using the following.
 // When this variable is not set, we assume the page is hosted on your
 // netdata server already.
@@ -174,6 +176,9 @@
 
     if(typeof netdataShowAlarms === 'undefined')
         netdataShowAlarms = false;
+
+    if(typeof netdataRegistryAfterMs !== 'number' || netdataRegistryAfterMs < 0)
+        netdataRegistryAfterMs = 1500;
 
     if(typeof netdataRegistry === 'undefined') {
         // backward compatibility
@@ -3461,7 +3466,7 @@
         setTimeout(NETDATA.alarms.init, 1000);
 
         // Registry initialization
-        setTimeout(NETDATA.registry.init, 1500);
+        setTimeout(NETDATA.registry.init, netdataRegistryAfterMs);
     };
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -5553,7 +5558,7 @@
             dataType: "script",
             xhrFields: { withCredentials: true } // required for the cookie
         })
-        .success(function() {
+        .done(function() {
             if(NETDATA.options.debug.main_loop === true)
                 console.log('loaded ' + NETDATA.requiredJs[index].url);
 
@@ -5601,9 +5606,16 @@
                 return;
             }
 
+            var value = entry.value;
+            if(NETDATA.alarms.current !== null) {
+                var t = NETDATA.alarms.current.alarms[entry.chart + '.' + entry.name];
+                if(typeof t !== 'undefined' && entry.status == t.status)
+                    value = t.value;
+            }
+
             var name = entry.name.replace(/_/g, ' ');
             var status = entry.status.toLowerCase();
-            var title = name + ' = ' + ((entry.value === null)?'NaN':Math.floor(entry.value)).toString() + ' ' + entry.units;
+            var title = name + ' = ' + ((value === null)?'NaN':Math.floor(value)).toString() + ' ' + entry.units;
             var tag = entry.alarm_id;
             var icon = 'images/seo-performance-128.png';
             var interaction = false;
