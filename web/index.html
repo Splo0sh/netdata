@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <title>netdata dashboard</title>
@@ -408,7 +408,14 @@
             pan_and_zoom: false,
             after: 0,
             before: 0,
-            nowelcome: 0,
+            nowelcome: false,
+            show_alarms: false,
+            chart: null,
+            family: null,
+            alarm: null,
+            alarm_unique_id: 0,
+            alarm_id: 0,
+            alarm_event_id: 0,
             hasProperty: function(property) {
                 // console.log('checking property ' + property + ' of type ' + typeof(this[property]));
                 return typeof this[property] !== 'undefined';
@@ -450,7 +457,7 @@
                 if(len !== 0) {
                     var p = variables[len].split('=');
                     if(urlOptions.hasProperty(p[0]) && typeof p[1] !== 'undefined')
-                        urlOptions[p[0]] = p[1];
+                        urlOptions[p[0]] = decodeURIComponent(p[1]);
                 }
                 else {
                     if(variables[len].length > 0)
@@ -458,8 +465,21 @@
                 }
             }
 
-            if(urlOptions.before > 0 && urlOptions.after > 0)
+            var booleans = [ 'nowelcome', 'show_alarms', 'pan_and_zoom' ];
+            len = booleans.length;
+            while(len--) {
+                if(urlOptions[booleans[len]] === 'true' || urlOptions[booleans[len]] === true || urlOptions[booleans[len]] === '1' || urlOptions[booleans[len]] === 1)
+                    urlOptions[booleans[len]] = true;
+                else
+                    urlOptions[booleans[len]] = false;
+            }
+
+            if(urlOptions.before > 0 && urlOptions.after > 0) {
                 urlOptions.pan_and_zoom = true;
+                urlOptions.nowelcome = true;
+            }
+            else
+                urlOptions.pan_and_zoom = false;
 
             // console.log(urlOptions);
         }
@@ -593,7 +613,7 @@
     </script>
 
     <!-- load the dashboard manager - it will do the rest -->
-    <script type="text/javascript" src="dashboard.js?v46"></script>
+    <script type="text/javascript" src="dashboard.js?v49"></script>
 </head>
 <body data-spy="scroll" data-target="#sidebar">
     <div id="loadOverlay" class="loadOverlay" style="background-color: #888; color: #888;">
@@ -1260,11 +1280,16 @@ var gotoServerMiddleClick = false;
 var gotoServerStop = false;
 function gotoServerValidateUrl(id, guid, url) {
     var penaldy = 0;
+    var error = 'failed';
+
     if(document.location.toString().startsWith('http://') && url.toString().startsWith('https://'))
             // we penalize https only if the current url is http
             // to allow the user walk through all its servers.
             penaldy = 500;
 
+    else if(document.location.toString().startsWith('https://') && url.toString().startsWith('http://'))
+        error = 'can\'t check';
+    
     var finalURL = netdataURL(url);
 
     setTimeout(function() {
@@ -1288,7 +1313,7 @@ function gotoServerValidateUrl(id, guid, url) {
                 }
             }
             else {
-                document.getElementById(guid + '-' + id + '-status').innerHTML = "failed!";
+                document.getElementById(guid + '-' + id + '-status').innerHTML = error;
                 gotoServerValidateRemaining--;
                 if(gotoServerValidateRemaining <= 0) {
                     gotoServerMiddleClick = false;
@@ -1568,7 +1593,13 @@ var menuData = {
     },
 
     'nfsd': {
-        title: 'File Server (nfsd)',
+        title: 'NFS Server',
+        icon: '<i class="fa fa-folder-open" aria-hidden="true"></i>',
+        info: undefined
+    },
+
+    'nfs': {
+        title: 'NFS Client',
         icon: '<i class="fa fa-folder-open" aria-hidden="true"></i>',
         info: undefined
     },
@@ -1635,6 +1666,12 @@ var menuData = {
         info: undefined
     },
 
+    'retroshare': {
+        title: 'RetroShare',
+        icon: '<i class="fa fa-share-alt" aria-hidden="true"></i>',
+        info: undefined
+    },
+
     'ipfs': {
         title: 'IPFS',
         icon: '<i class="fa fa-folder-open" aria-hidden="true"></i>',
@@ -1683,6 +1720,12 @@ var menuData = {
         info: undefined
     },
 
+    'apcupsd': {
+        title: 'UPS',
+        icon: '<i class="fa fa-battery-half" aria-hidden="true"></i>',
+        info: undefined
+    },
+
     'smawebbox': {
         title: 'Solar Power',
         icon: '<i class="fa fa-sun-o" aria-hidden="true"></i>',
@@ -1715,6 +1758,16 @@ var submenuData = {
     'netfilter.synproxy': {
         title: 'DDoS Protection',
         info: 'DDoS Protection performance monitoring read from <code>/proc/net/stat/synproxy</code>. <a href="https://github.com/firehol/firehol/wiki/Working-with-SYNPROXY" target="_blank">SYNPROXY</a> is a TCP SYN packets proxy. It is used to protect any TCP server (like a web server) from SYN floods and similar DDoS attacks. It is a netfilter module, in the Linux kernel (since version 3.12). It is optimized to handle millions of packets per second utilizing all CPUs available without any concurrency locking between the connections. It can be used for any kind of TCP traffic (even encrypted), since it does not interfere with the content itself.'
+    },
+
+    'system.softnet_stat': {
+        title: 'softnet',
+        info: 'Statistics for CPUs SoftIRQs related to network receive work, read from <code>/proc/net/softnet_stat</code>. Break down per CPU core can be found at <a href="#cpu_softnet_stat">CPU / softnet statistics</a>. <b>processed</b> states the number of packets processed, <b>dropped</b> is the number packets dropped because the network device backlog was full (to fix them use <code>sysctl</code> to increase <code>net.core.netdev_max_backlog</code>), <b>squeezed</b> is the number of packets dropped because the network device budget was full (to fix them use <code>sysctl</code> to increase <code>net.core.netdev_budget</code>). More information about identifying and troubleshooting network driver related issues can be found at <a href="https://access.redhat.com/sites/default/files/attachments/20150325_network_performance_tuning.pdf" target="_blank">Red Hat Enterprise Linux Network Performance Tuning Guide</a>.'
+    },
+
+    'cpu.softnet_stat': {
+        title: 'softnet',
+        info: 'Statistics for per CPUs core SoftIRQs related to network receive work, read from <code>/proc/net/softnet_stat</code>. Total for all CPU cores can be found at <a href="#system_softnet_stat">System / softnet statistics</a>. <b>processed</b> states the number of packets processed, <b>dropped</b> is the number packets dropped because the network device backlog was full (to fix them use <code>sysctl</code> to increase <code>net.core.netdev_max_backlog</code>), <b>squeezed</b> is the number of packets dropped because the network device budget was full (to fix them use <code>sysctl</code> to increase <code>net.core.netdev_budget</code>). More information about identifying and troubleshooting network driver related issues can be found at <a href="https://access.redhat.com/sites/default/files/attachments/20150325_network_performance_tuning.pdf" target="_blank">Red Hat Enterprise Linux Network Performance Tuning Guide</a>.'
     }
 };
 
@@ -1752,7 +1805,7 @@ var chartData = {
 
     'system.entropy': {
         colors: '#CC22AA',
-        info: '<a href="https://en.wikipedia.org/wiki/Entropy_(computing)" target="_blank">Entropy</a>, read from <code>/proc/sys/kernel/random/entropy_avail</code>, is like a pool of random numbers that are mainly used in cryptography. It is advised that the pool remains always <a href="https://blog.cloudflare.com/ensuring-randomness-with-linuxs-random-number-generator/" target="_blank">above 200</a>. If the pool of entropy gets empty, you risk your security to be predictable and you should install a user-space random numbers generating daemon, like <a href="http://www.issihosts.com/haveged/" target="_blank">haveged</a>, to keep the pool in healthy levels.'
+        info: '<a href="https://en.wikipedia.org/wiki/Entropy_(computing)" target="_blank">Entropy</a>, read from <code>/proc/sys/kernel/random/entropy_avail</code>, is like a pool of random numbers (<a href="https://en.wikipedia.org/wiki//dev/random" target="_blank">/dev/random</a>) that are mainly used in cryptography. It is advised that the pool remains always <a href="https://blog.cloudflare.com/ensuring-randomness-with-linuxs-random-number-generator/" target="_blank">above 200</a>. If the pool of entropy gets empty, you risk your security to be predictable and you should install a user-space random numbers generating daemon, like <a href="http://www.issihosts.com/haveged/" target="_blank">haveged</a> or <code>rng-tools</code> (i.e. <b>rngd</b>), to keep the pool in healthy levels.'
     },
 
     'system.forks': {
@@ -2107,6 +2160,39 @@ var chartData = {
 
     'netdata.response_time': {
         info: 'The netdata API response time measures the time netdata needed to serve requests. This time includes everything, from the reception of the first byte of a request, to the dispatch of the last byte of its reply, therefore it includes all network latencies involved (i.e. a client over a slow network will influence these metrics).'
+    },
+
+    // ------------------------------------------------------------------------
+    // RETROSHARE
+    'retroshare.bandwidth': {
+        info: 'Shows inbound and outbound traffic.',
+        mainheads: [
+            gaugeChart('Received', '12%', 'bandwidth_down_kb'),
+            gaugeChart('Sent', '12%', 'bandwidth_up_kb')
+        ]
+    },
+
+    'retroshare.peers': {
+        info: 'Shows the number of (connected) friends.',
+        mainheads: [
+            function(id) {
+                return  '<div data-netdata="' + id + '"'
+                    + ' data-dimensions="peers_connected"'
+                    + ' data-append-options="friends"'
+                    + ' data-chart-library="easypiechart"'
+                    + ' data-title="connected friends"'
+                    + ' data-units=""'
+                    + ' data-width="8%"'
+                    + ' data-before="0"'
+                    + ' data-after="-CHART_DURATION"'
+                    + ' data-points="CHART_DURATION"'
+                    + ' role="application"></div>';
+            }
+        ]
+    },
+
+    'retroshare.dht': {
+        info: 'Shows statistics about RetroShare\'s DHT. These values are estimated!'
     }
 };
 
@@ -2211,6 +2297,7 @@ function enrichChartData(chart) {
         case 'phpfpm':
         case 'postfix':
         case 'redis':
+        case 'retroshare':
         case 'ipfs':
         case 'smawebbox':
         case 'squid':
@@ -2519,6 +2606,12 @@ function renderChartsAndMenu(data) {
 
         // index the chart in the menu/submenu
         menus[charts[c].menu].submenus[charts[c].submenu].charts.push(charts[c]);
+
+        // console.log(urlOptions.chart + ' === ' + c);
+        if(urlOptions.chart === c) {
+            urlOptions.hash = '#' + name2id(charts[c].menu + '_' + charts[c].submenu)
+            // console.log('hash = ' + urlOptions.hash);
+        }
     }
 
     // propagate the descriptive subname given to QoS
@@ -2544,7 +2637,7 @@ function alarmsUpdateModal() {
     var active = '<h3>Raised Alarms</h3><table class="table">';
     var all = '<h3>All Running Alarms</h3><div class="panel-group" id="alarms_all_accordion" role="tablist" aria-multiselectable="true">';
     var log = '<h3>Alarm Log</h3><table class="table"><tr><th>When</th><th>Chart</th><th>Alarm</th><th>Status</th>';
-    var footer = '<hr/><a href="https://github.com/firehol/netdata/wiki/Generating-Badges" target="_blank">netdata badges</a> refresh automatically. Their color indicates the state of the alarm: <span style="color: #e05d44"><b>&nbsp;red&nbsp;</b></span> is critical, <span style="color:#fe7d37"><b>&nbsp;orange&nbsp;</b></span> is warning, <span style="color: #4c1"><b>&nbsp;bright green&nbsp;</b></span> is ok, <span style="color: #9f9f9f"><b>&nbsp;light grey&nbsp;</b></span> is undefined (i.e. no data or no status), <span style="color: #000"><b>&nbsp;black&nbsp;</b></span> is not initialized. You can copy and paste their URLs to embed them in any web page.';
+    var footer = '<hr/><a href="https://github.com/firehol/netdata/wiki/Generating-Badges" target="_blank">netdata badges</a> refresh automatically. Their color indicates the state of the alarm: <span style="color: #e05d44"><b>&nbsp;red&nbsp;</b></span> is critical, <span style="color:#fe7d37"><b>&nbsp;orange&nbsp;</b></span> is warning, <span style="color: #4c1"><b>&nbsp;bright green&nbsp;</b></span> is ok, <span style="color: #9f9f9f"><b>&nbsp;light grey&nbsp;</b></span> is undefined (i.e. no data or no status), <span style="color: #000"><b>&nbsp;black&nbsp;</b></span> is not initialized. You can copy and paste their URLs to embed them in any web page.<br/>netdata can send notifications for these alarms. Check <a href="https://github.com/firehol/netdata/blob/master/conf.d/health_alarm_notify.conf">this configuration file</a> for more information.';
 
     NETDATA.alarms.get('all', function(data) {
         options.alarm_families = new Array();
@@ -2634,8 +2727,29 @@ function alarmsUpdateModal() {
                     + ((chart.red !== null)?('<tr><td width="10%" style="text-align:right">red&nbsp;threshold</td><td><code>' + chart.red + ' ' + chart.units + '</code></td></tr>'):'');
             }
 
+            var delay = '';
+            if((alarm.delay_up_duration > 0 || alarm.delay_down_duration > 0) && alarm.delay_multiplier != 0 && alarm.delay_max_duration > 0) {
+                if(alarm.delay_up_duration == alarm.delay_down_duration) {
+                    delay += '<small><br/>hysteresis ' + frequency_text(alarm.delay_up_duration);
+                }
+                else {
+                    delay = '<small><br/>hysteresis ';
+                    if(alarm.delay_up_duration > 0) {
+                        delay += 'on&nbsp;escalation&nbsp;<code>' + frequency_text(alarm.delay_up_duration) + '</code>, ';
+                    }
+                    if(alarm.delay_down_duration > 0) {
+                        delay += 'on&nbsp;recovery&nbsp;<code>' + frequency_text(alarm.delay_down_duration) + '</code>, ';
+                    }
+                }
+                if(alarm.delay_multiplier != 1.0) {
+                    delay += 'multiplied&nbsp;by&nbsp;<code>' + alarm.delay_multiplier.toString() + '</code>';
+                    delay += ',&nbsp;up&nbsp;to&nbsp;<code>' + frequency_text(alarm.delay_max_duration) + '</code>';
+                }
+                delay += '</small>';
+            }
+
             html += '<tr><td width="10%" style="text-align:right">check&nbsp;every</td><td>' + frequency_text(alarm.update_every) + '</td></tr>'
-                + '<tr><td width="10%" style="text-align:right">execute</td><td><span style="font-family: monospace;">' + alarm.exec + '</span></td></tr>'
+                + '<tr><td width="10%" style="text-align:right">execute</td><td><span style="font-family: monospace;">' + alarm.exec + '</span>' + delay + '</td></tr>'
                 + '<tr><td width="10%" style="text-align:right">source</td><td><span style="font-family: monospace;">' + alarm.source + '</span></td></tr>'
                 + '</table></td></tr>';
 
@@ -2693,15 +2807,13 @@ function alarmsUpdateModal() {
             if(chart.priority < families[family].priority)
                 families[family].priority = chart.priority;
 
-            families[family].arr.push(alarm);
+            families[family].arr.unshift(alarm);
         }
 
         // sort the families, like the dashboard menu does
         var families_sorted = families_sort.sort(function (a, b) {
             if (a.priority > b.priority) return -1;
             if (a.priority < b.priority) return 1;
-            if (a.name < b.name) return 1;
-            if (a.name > b.name) return -1;
             return 0;
         });
 
@@ -2737,7 +2849,7 @@ function alarmsUpdateModal() {
                         active += '<tr><th class="text-center" colspan="2"><h4>' + family + '</h4></th></tr>';
                     }
                     count_active++;
-                    active += alarm_to_html(alarm, false);
+                    active += alarm_to_html(alarm, true);
                 }
 
                 count_all++;
@@ -2976,10 +3088,8 @@ function finalizePage() {
     // the Dom elements are initially zero-sized
     NETDATA.parseDom();
 
-    if(urlOptions.pan_and_zoom === true) {
-        urlOptions.nowelcome = true;
+    if(urlOptions.pan_and_zoom === true)
         NETDATA.globalPanAndZoom.setMaster(NETDATA.options.targets[0], urlOptions.after, urlOptions.before);
-    }
 
     // ------------------------------------------------------------------------
     // https://github.com/viralpatel/jquery.shorten/blob/master/src/jquery.shorten.js
@@ -3245,7 +3355,7 @@ function finalizePage() {
     });
 
     if(isdemo()) {
-        if(!urlOptions.nowelcome) {
+        if(urlOptions.nowelcome !== true) {
             setTimeout(function() {
                 $('#welcomeModal').modal();
             }, 1000);
@@ -3264,6 +3374,9 @@ function finalizePage() {
         }, 2000);
     }
     else notifyForUpdate();
+
+    if(urlOptions.show_alarms === true)
+        setTimeout(function() { $('#alarmsModal').modal('show'); }, 1000);
 }
 
 function resetDashboardOptions() {
